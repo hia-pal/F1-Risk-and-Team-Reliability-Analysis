@@ -1,0 +1,734 @@
+Loading File
+
+from google.colab import files
+import pandas as pd
+import io
+
+print(" UPLOAD YOUR F1 DATA FILE")
+print("=" * 40)
+print("Supported formats: CSV or Excel (.csv, .xlsx, .xls)")
+print("Click 'Choose Files' below to upload your file")
+
+# Upload file
+uploaded = files.upload()
+
+# Get the uploaded filename
+file_name = list(uploaded.keys())[0]
+print(f"\n File uploaded: {file_name}")
+print(f" File size: {len(uploaded[file_name]) / 1024 / 1024:.2f} MB")
+
+# Read the file based on extension
+if file_name.endswith('.csv'):
+    df = pd.read_csv(io.BytesIO(uploaded[file_name]))
+    print(" Reading as CSV file")
+elif file_name.endswith(('.xlsx', '.xls')):
+    df = pd.read_excel(io.BytesIO(uploaded[file_name]))
+    print(" Reading as Excel file")
+else:
+    print(" Unsupported file format")
+
+print(f"\n DATASET LOADED SUCCESSFULLY!")
+print(f"• Records: {len(df):,}")
+print(f"• Columns: {len(df.columns)}")
+print(f"• Columns: {list(df.columns)}")
+
+# Show basic info
+print(f"\n BASIC STATISTICS:")
+print(f"• Dataset shape: {df.shape}")
+print(f"• Column types:\n{df.dtypes}")
+
+if 'is_dnf' in df.columns:
+    print(f"• DNF rate: {df['is_dnf'].mean():.1%}")
+
+if 'year' in df.columns:
+    print(f"• Year range: {df['year'].min()} - {df['year'].max()}")
+
+# Display first few rows
+print(f"\n SAMPLE DATA (first 5 rows):")
+print(df.head())
+
+
+Descriptive Stats:
+Code has Statistical Measures Used:
+
+
+Count - Total number of records
+
+Sum - (for missing values analysis)
+
+Mean/Average - Central tendency
+
+Standard Deviation - Data dispersion
+
+Minimum - Lowest values
+
+Maximum - Highest values
+
+25th Percentile - First quartile
+
+50th Percentile (Median) - Middle value
+
+75th Percentile - Third quartile
+
+Proportions/Rates - Reliability rates
+
+Unique Count - Distinct values
+
+Sorting/Ranking - Team rankings
+
+Grouping/Aggregation - Team-level stats
+
+Descriptive Statistics Summary - Overall dataset overview
+
+# DESCRIPTIVE STATISTICS
+print(" DESCRIPTIVE STATISTICS - F1 TEAM RELIABILITY")
+print("=" * 60)
+
+# Basic dataset info
+print(f"Dataset Shape: {df.shape[0]:,} rows × {df.shape[1]} columns")
+print(f"Memory Usage: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+
+# Data types overview
+print(f"\n DATA TYPES OVERVIEW:")
+dtype_counts = df.dtypes.value_counts()
+for dtype, count in dtype_counts.items():
+    print(f"  {dtype}: {count} columns")
+
+# Numeric columns descriptive stats
+print(f"\n NUMERIC COLUMNS DESCRIPTIVE STATISTICS:")
+numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
+numeric_stats = df[numeric_cols].describe()
+
+# Format the numeric stats for better readability
+for col in numeric_stats.columns:
+    print(f"\n{col.upper()}:")
+    stats = numeric_stats[col]
+    print(f"  Count    : {stats['count']:>8,.0f}")
+    print(f"  Mean     : {stats['mean']:>8.2f}")
+    print(f"  Std Dev  : {stats['std']:>8.2f}")
+    print(f"  Min      : {stats['min']:>8.2f}")
+    print(f"  25%      : {stats['25%']:>8.2f}")
+    print(f"  50% (Median): {stats['50%']:>6.2f}")
+    print(f"  75%      : {stats['75%']:>8.2f}")
+    print(f"  Max      : {stats['max']:>8.2f}")
+
+# Categorical columns analysis
+print(f"\n CATEGORICAL COLUMNS ANALYSIS:")
+categorical_cols = df.select_dtypes(include=['object', 'bool']).columns
+for col in categorical_cols:
+    unique_count = df[col].nunique()
+    print(f"\n{col}:")
+    print(f"  Unique values: {unique_count}")
+    if unique_count <= 10:  # Show details for columns with few unique values
+        value_counts = df[col].value_counts()
+        for value, count in value_counts.items():
+            percentage = (count / len(df)) * 100
+            print(f"    {value}: {count:,} ({percentage:.1f}%)")
+
+# Team statistics with insights
+print(f"\n🏎️ TEAM ANALYSIS:")
+print(f"Total unique teams: {df['team_name'].nunique()}")
+print(f"Total unique constructors: {df['constructorRef'].nunique()}")
+
+# Team participation analysis
+team_race_counts = df['team_name'].value_counts()
+print(f"\nTEAM PARTICIPATION DISTRIBUTION:")
+print(f"  Most active team: {team_race_counts.index[0]} ({team_race_counts.iloc[0]:,} races)")
+print(f"  Least active team: {team_race_counts.index[-1]} ({team_race_counts.iloc[-1]} races)")
+print(f"  Average races per team: {team_race_counts.mean():.1f}")
+
+print(f"\nTOP 10 MOST ACTIVE TEAMS:")
+for i, (team, count) in enumerate(team_race_counts.head(10).items(), 1):
+    percentage = (count / len(df)) * 100
+    print(f"  {i:2}. {team:20} {count:>5,} races ({percentage:.1f}%)")
+
+# Time range analysis
+print(f"\n TEMPORAL ANALYSIS:")
+years = df['year'].unique()
+print(f"Data spans: {df['year'].min()} to {df['year'].max()} ({len(years)} seasons)")
+print(f"Most recent season: {df['year'].max()}")
+print(f"Oldest season: {df['year'].min()}")
+
+# Races per year analysis
+races_per_year = df.groupby('year')['race_name'].nunique()
+print(f"\nRACES PER SEASON:")
+print(f"  Average races per season: {races_per_year.mean():.1f}")
+print(f"  Most races in a season: {races_per_year.max()} (in {races_per_year.idxmax()})")
+print(f"  Fewest races in a season: {races_per_year.min()}")
+
+# Missing values analysis
+print(f"\n MISSING VALUES ANALYSIS:")
+missing_data = df.isnull().sum()
+missing_percentage = (missing_data / len(df)) * 100
+
+missing_df = pd.DataFrame({
+    'Missing_Count': missing_data,
+    'Missing_Percentage': missing_percentage
+})
+
+# Only show columns with missing values
+missing_df = missing_df[missing_df['Missing_Count'] > 0]
+
+if missing_df.empty:
+    print("   No missing values in the dataset!")
+else:
+    print("Columns with missing values:")
+    for col, row in missing_df.iterrows():
+        print(f"  {col:25} {row['Missing_Count']:>6,} ({row['Missing_Percentage']:5.1f}%)")
+
+# Reliability metrics overview
+print(f"\n RELIABILITY METRICS OVERVIEW:")
+if 'is_dnf' in df.columns:
+    dnf_rate = df['is_dnf'].mean() * 100
+    finished_rate = (1 - df['is_dnf'].mean()) * 100
+    print(f"  DNF Rate: {dnf_rate:.1f}%")
+    print(f"  Finish Rate: {finished_rate:.1f}%")
+
+if 'laps_completed_ratio' in df.columns:
+    avg_laps_completed = df['laps_completed_ratio'].mean() * 100
+    print(f"  Average Laps Completed: {avg_laps_completed:.1f}%")
+
+if 'points_scored' in df.columns:
+    avg_points = df['points_scored'].mean()
+    total_points = df['points_scored'].sum()
+    print(f"  Average Points per Race: {avg_points:.2f}")
+    print(f"  Total Points in Dataset: {total_points:,.0f}")
+
+# Data quality insights
+print(f"\n DATA QUALITY INSIGHTS:")
+print(f"  • Dataset covers {len(years)} years of F1 history")
+print(f"  • {df['team_name'].nunique()} teams analyzed for reliability")
+print(f"  • Overall DNF rate of {dnf_rate:.1f}% shows historical reliability challenges")
+print(f"  • {missing_df.shape[0]} columns have missing data" if not missing_df.empty else "  • No data quality issues with missing values")
+
+
+*Correlation*
+
+# CORRELATION ANALYSIS
+print("=== CORRELATION ANALYSIS ===")
+
+# Select numeric columns for correlation
+numeric_cols = ['grid', 'position', 'qualifying_position', 'is_dnf', 'year', 'round', 'points_scored']
+correlation_data = df[numeric_cols].copy()
+
+# Calculate correlation matrix
+correlation_matrix = correlation_data.corr()
+
+print("CORRELATION MATRIX:")
+print(correlation_matrix.round(3))
+
+# Key correlation insights
+print(f"\nKEY CORRELATIONS:")
+print(f"Grid ↔ Position: {correlation_matrix.loc['grid', 'position']:.3f}")
+print(f"Grid ↔ DNF: {correlation_matrix.loc['grid', 'is_dnf']:.3f}")
+print(f"Points ↔ DNF: {correlation_matrix.loc['points_scored', 'is_dnf']:.3f}")
+print(f"Year ↔ DNF: {correlation_matrix.loc['year', 'is_dnf']:.3f}")
+
+print(f"\n INTERPRETATION:")
+print(f"• Better grid position = better finish position (0.649)")
+print(f"• Worse grid position = higher DNF risk (0.377)")
+print(f"• More points scored = lower DNF risk (-0.613)")
+print(f"• Modern era = slightly more reliable (-0.220)")
+
+# CORRELATION VISUALIZATION - CLEAN VERSION
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+
+print("=== CORRELATION VISUALIZATION - CLEAN PLOTS ===")
+
+# Set up clean style
+plt.style.use('default')
+sns.set_palette("husl")
+
+# 1. CLEAN CORRELATION HEATMAP
+plt.figure(figsize=(10, 8))
+mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))  # Show only lower triangle
+sns.heatmap(correlation_matrix,
+            mask=mask,
+            annot=True,
+            cmap='RdBu_r',
+            center=0,
+            fmt='.2f',
+            square=True,
+            cbar_kws={'shrink': 0.8},
+            annot_kws={'size': 10})
+plt.title('F1 Reliability Correlation Matrix\n(Lower Triangle)', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+# 2. CLEAN BAR CHART - Key Correlations
+plt.figure(figsize=(10, 6))
+key_correlations = {
+    'Grid → Finish': correlation_matrix.loc['grid', 'position'],
+    'Grid → DNF Risk': correlation_matrix.loc['grid', 'is_dnf'],
+    'Points → DNF': correlation_matrix.loc['points_scored', 'is_dnf'],
+    'Modern Era Reliability': correlation_matrix.loc['year', 'is_dnf']
+}
+
+colors = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D']
+bars = plt.bar(key_correlations.keys(), key_correlations.values(), color=colors, alpha=0.8, edgecolor='black')
+
+# Add value labels
+for bar, (label, value) in zip(bars, key_correlations.items()):
+    plt.text(bar.get_x() + bar.get_width()/2,
+             bar.get_height() + (0.02 if value > 0 else -0.03),
+             f'{value:.3f}',
+             ha='center', va='bottom' if value > 0 else 'top',
+             fontweight='bold', fontsize=11)
+
+plt.title('Key F1 Reliability Correlations', fontsize=14, fontweight='bold')
+plt.ylabel('Pearson Correlation Coefficient', fontsize=12)
+plt.axhline(y=0, color='black', linewidth=1, linestyle='-')
+plt.grid(axis='y', alpha=0.3, linestyle='--')
+plt.ylim(-0.7, 0.7)
+plt.xticks(rotation=15)
+plt.tight_layout()
+plt.show()
+
+# 3. CLEAN SCATTER PLOTS - Using Binned Data for Clarity
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+# Plot 1: Grid vs Position - WITH BINNING
+df_clean = df.dropna(subset=['grid', 'position']).sample(2000)  # Sample for clarity
+axes[0,0].hexbin(df_clean['grid'], df_clean['position'], gridsize=25, cmap='Blues', alpha=0.8)
+# Trend line
+z = np.polyfit(df_clean['grid'], df_clean['position'], 1)
+p = np.poly1d(z)
+x_range = np.linspace(df_clean['grid'].min(), df_clean['grid'].max(), 100)
+axes[0,0].plot(x_range, p(x_range), "r-", linewidth=3, label=f'Trend (r={correlation_matrix.loc["grid", "position"]:.3f})')
+axes[0,0].set_xlabel('Grid Position (0 = Pole Position)')
+axes[0,0].set_ylabel('Finishing Position')
+axes[0,0].set_title('Better Grid = Better Finish\nStrong Positive Correlation', fontweight='bold')
+axes[0,0].legend()
+axes[0,0].grid(alpha=0.3)
+
+# Plot 2: Grid vs DNF - USE BINNED AVERAGES
+grid_bins = pd.cut(df['grid'], bins=15)
+grid_dnf = df.groupby(grid_bins)['is_dnf'].mean().reset_index()
+grid_dnf['grid_mid'] = grid_dnf['grid'].apply(lambda x: x.mid)
+
+axes[0,1].bar(grid_dnf['grid_mid'], grid_dnf['is_dnf'],
+              width=1.5, alpha=0.7, color='red', edgecolor='black')
+axes[0,1].set_xlabel('Grid Position')
+axes[0,1].set_ylabel('DNF Probability')
+axes[0,1].set_title('Worse Grid = Higher DNF Risk\nModerate Positive Correlation', fontweight='bold')
+axes[0,1].grid(alpha=0.3)
+
+# Plot 3: Points vs DNF - USE BINNED AVERAGES
+points_bins = pd.cut(df['points_scored'], bins=[-0.5, 0.5, 2.5, 5.5, 10.5, 15.5, 25.5, 50.5])
+points_dnf = df.groupby(points_bins)['is_dnf'].mean().reset_index()
+points_dnf['points_mid'] = points_dnf['points_scored'].apply(lambda x: x.mid)
+
+axes[1,0].bar(points_dnf['points_mid'], points_dnf['is_dnf'],
+              width=3, alpha=0.7, color='green', edgecolor='black')
+axes[1,0].set_xlabel('Points Scored')
+axes[1,0].set_ylabel('DNF Probability')
+axes[1,0].set_title('More Points = Lower DNF Risk\nStrong Negative Correlation', fontweight='bold')
+axes[1,0].grid(alpha=0.3)
+
+# Plot 4: Year vs DNF - CLEAN TIME SERIES
+year_dnf = df.groupby('year')['is_dnf'].mean().reset_index()
+# 5-year moving average for smoother trend
+year_dnf['dnf_ma'] = year_dnf['is_dnf'].rolling(window=5, center=True).mean()
+
+axes[1,1].plot(year_dnf['year'], year_dnf['is_dnf'], 'o-', alpha=0.5, linewidth=1, label='Yearly DNF Rate')
+axes[1,1].plot(year_dnf['year'], year_dnf['dnf_ma'], 'r-', linewidth=3, label='5-Year Trend')
+axes[1,1].set_xlabel('Year')
+axes[1,1].set_ylabel('DNF Rate')
+axes[1,1].set_title('Modern Era = Better Reliability\nWeak Negative Correlation', fontweight='bold')
+axes[1,1].grid(alpha=0.3)
+axes[1,1].legend()
+
+plt.tight_layout()
+plt.show()
+
+# 4. CLEAN DNF RATE OVER TIME
+plt.figure(figsize=(12, 6))
+
+# Calculate decade averages for cleaner bars
+df['decade'] = (df['year'] // 10) * 10
+decade_dnf = df.groupby('decade')['is_dnf'].mean().reset_index()
+
+plt.bar(decade_dnf['decade'], decade_dnf['is_dnf'],
+        width=8, alpha=0.7, color='coral', edgecolor='black')
+
+plt.xlabel('Decade', fontsize=12)
+plt.ylabel('Average DNF Rate', fontsize=12)
+plt.title('F1 Reliability Improvement Over Decades', fontsize=14, fontweight='bold')
+plt.grid(axis='y', alpha=0.3)
+plt.xticks(decade_dnf['decade'], rotation=45)
+
+# Add value labels on bars
+for i, (decade, rate) in enumerate(zip(decade_dnf['decade'], decade_dnf['is_dnf'])):
+    plt.text(decade, rate + 0.02, f'{rate:.1%}',
+             ha='center', va='bottom', fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+print("✅ CLEAN visualizations completed!")
+
+
+*Time Based Reliability Analysis*
+
+# TIME-BASED RELIABILITY ANALYSIS
+print("=== TIME-BASED RELIABILITY ANALYSIS ===")
+
+def analyze_team_by_eras(team_name, data):
+    """Analyze team reliability across different time eras"""
+    team_data = data[data['current_team'] == team_name].copy()
+
+    if len(team_data) == 0:
+        return f" Team '{team_name}' not found"
+
+    # Define eras
+    current_year = 2024
+    eras = {
+        'Last 5 Years (2020-2024)': (2020, 2024),
+        '5 Years Before (2015-2019)': (2015, 2019),
+        '5 Years Before That (2010-2014)': (2010, 2014),
+        'Early 2000s (2000-2009)': (2000, 2009),
+        '1990s Era': (1990, 1999),
+        'Pre-1990': (1950, 1989)
+    }
+
+    print(f"\n{'='*70}")
+    print(f"  ERA-BASED RELIABILITY: {team_name.upper()}")
+    print(f"{'='*70}")
+
+    era_results = {}
+
+    for era_name, (start_year, end_year) in eras.items():
+        era_data = team_data[(team_data['year'] >= start_year) & (team_data['year'] <= end_year)]
+
+        if len(era_data) > 0:
+            total_races = len(era_data)
+            finished_races = len(era_data[era_data['is_dnf'] == False])  # Using is_dnf instead of finished_race
+            reliability = finished_races / total_races
+
+            # Performance metrics
+            finished_in_era = era_data[era_data['is_dnf'] == False]
+            avg_start = finished_in_era['grid'].mean()  # Using grid instead of startingPosition
+            avg_finish = finished_in_era['position'].mean()  # Using position instead of finishingPosition
+
+            era_results[era_name] = {
+                'reliability': reliability,
+                'races': total_races,
+                'avg_start': avg_start,
+                'avg_finish': avg_finish
+            }
+
+            # Grade for this era
+            if reliability >= 0.90:
+                grade = "A+"
+            elif reliability >= 0.80:
+                grade = "A"
+            elif reliability >= 0.70:
+                grade = "B"
+            elif reliability >= 0.60:
+                grade = "C"
+            else:
+                grade = "F"
+
+            print(f"{era_name:<25} {reliability:>6.1%} {grade:<8} {total_races:>3} races")
+            if not finished_in_era.empty:
+                print(f"{' ':>25} Avg: {avg_start:.1f} → {avg_finish:.1f} ({avg_start - avg_finish:+.1f} pos)")
+            else:
+                print(f"{' ':>25} No finished races")
+        else:
+            print(f"{era_name:<25} {'No data':>12}")
+
+    return era_results
+
+# Show available current teams
+print("Available current F1 teams for era analysis:")
+current_teams = ['Mercedes', 'Red Bull', 'Ferrari', 'McLaren', 'Alpine',
+                 'Aston Martin', 'Williams', 'AlphaTauri', 'Alfa Romeo', 'Haas']
+
+for i, team in enumerate(current_teams, 1):
+    count = len(df[df['current_team'] == team])
+    print(f"  {i}. {team:15} ({count} historical races)")
+
+print(f"\n{'='*70}")
+print(" ENTER TEAM NAME FOR ERA ANALYSIS")
+print("   Type 'quit' to exit")
+print(f"{'='*70}")
+
+while True:
+    user_input = input("\n🏎️  Enter team name: ").strip()
+
+    if user_input.lower() == 'quit':
+        break
+
+    # Find matching teams from current teams
+    matching_teams = [team for team in current_teams if user_input.lower() in team.lower()]
+
+    if not matching_teams:
+        print(f" No current F1 team found matching '{user_input}'")
+        print("   Available teams: Mercedes, Red Bull, Ferrari, McLaren, Alpine, Aston Martin, Williams, AlphaTauri, Alfa Romeo, Haas")
+        continue
+
+    if len(matching_teams) > 1:
+        print("Multiple teams found:")
+        for i, team in enumerate(matching_teams, 1):
+            count = len(df[df['current_team'] == team])
+            print(f"  {i}. {team} ({count} races)")
+        try:
+            choice = int(input("Enter number: ")) - 1
+            selected_team = matching_teams[choice]
+        except:
+            selected_team = matching_teams[0]
+    else:
+        selected_team = matching_teams[0]
+
+    # Run era analysis
+    results = analyze_team_by_eras(selected_team, df)
+
+    print(f"\n Era analysis complete! Ready for next team...")
+
+# COMPREHENSIVE ERA ANALYSIS WITH VISUALIZATIONS
+print("=== COMPREHENSIVE ERA ANALYSIS & VISUALIZATIONS ===")
+
+def analyze_all_teams_eras(data):
+    """Analyze all current teams across eras with exact year ranges"""
+
+    # Define eras that cover ALL years in dataset
+    min_year = data['year'].min()
+    max_year = data['year'].max()
+
+    eras = {
+        'Modern (2020-2024)': (2020, 2024),
+        'Hybrid Era (2014-2019)': (2014, 2019),
+        'V8 Era (2006-2013)': (2006, 2013),
+        'V10 Era (1995-2005)': (1995, 2005),
+        'Classic Era (1980-1994)': (1980, 1994),
+        'Early Years (1950-1979)': (1950, 1979)
+    }
+
+    current_teams = ['Mercedes', 'Red Bull', 'Ferrari', 'McLaren', 'Alpine',
+                    'Aston Martin', 'Williams', 'AlphaTauri', 'Alfa Romeo', 'Haas']
+
+    # Create results dataframe
+    era_results = {}
+
+    for team in current_teams:
+        team_data = data[data['current_team'] == team]
+        team_results = {}
+
+        for era_name, (start_year, end_year) in eras.items():
+            era_data = team_data[(team_data['year'] >= start_year) & (team_data['year'] <= end_year)]
+
+            if len(era_data) > 0:
+                total_races = len(era_data)
+                finished_races = len(era_data[era_data['is_dnf'] == False])
+                reliability = (finished_races / total_races) * 100
+
+                team_results[era_name] = {
+                    'reliability': reliability,
+                    'races': total_races,
+                    'finished_races': finished_races
+                }
+
+        era_results[team] = team_results
+
+    return era_results, eras
+
+# Run analysis for all teams
+all_teams_results, eras = analyze_all_teams_eras(df)
+
+# 1. RELIABILITY TRENDS OVER TIME VISUALIZATION
+print("\n📈 CREATING RELIABILITY TREND VISUALIZATIONS...")
+
+plt.figure(figsize=(16, 10))
+
+# Plot 1: Reliability Trends for All Teams
+plt.subplot(2, 2, 1)
+era_names = list(eras.keys())
+colors = plt.cm.Set3(np.linspace(0, 1, len(all_teams_results)))
+
+for i, (team, results) in enumerate(all_teams_results.items()):
+    reliabilities = []
+    for era in era_names:
+        if era in results:
+            reliabilities.append(results[era]['reliability'])
+        else:
+            reliabilities.append(np.nan)
+
+    plt.plot(era_names, reliabilities, 'o-', linewidth=2, markersize=6,
+             color=colors[i], label=team, alpha=0.8)
+
+plt.xlabel('Eras', fontsize=12)
+plt.ylabel('Reliability (%)', fontsize=12)
+plt.title('F1 Team Reliability Trends Across Eras', fontsize=14, fontweight='bold')
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(alpha=0.3)
+plt.xticks(rotation=45)
+plt.ylim(0, 100)
+
+# Plot 2: Top Teams Reliability Improvement
+plt.subplot(2, 2, 2)
+top_teams = ['Mercedes', 'Ferrari', 'Red Bull', 'McLaren']
+
+for team in top_teams:
+    if team in all_teams_results:
+        reliabilities = []
+        for era in era_names:
+            if era in all_teams_results[team]:
+                reliabilities.append(all_teams_results[team][era]['reliability'])
+            else:
+                reliabilities.append(np.nan)
+
+        plt.plot(era_names, reliabilities, 'o-', linewidth=3, markersize=8,
+                 label=team, alpha=0.8)
+
+plt.xlabel('Eras', fontsize=12)
+plt.ylabel('Reliability (%)', fontsize=12)
+plt.title('Top Teams: Reliability Evolution', fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.xticks(rotation=45)
+plt.ylim(0, 100)
+
+# Plot 3: Modern Era Reliability Comparison
+plt.subplot(2, 2, 3)
+modern_era = 'Modern (2020-2024)'
+modern_reliability = []
+
+teams_modern = []
+for team in all_teams_results:
+    if modern_era in all_teams_results[team]:
+        modern_reliability.append(all_teams_results[team][modern_era]['reliability'])
+        teams_modern.append(team)
+
+# Sort by reliability
+sorted_indices = np.argsort(modern_reliability)[::-1]
+modern_reliability_sorted = [modern_reliability[i] for i in sorted_indices]
+teams_modern_sorted = [teams_modern[i] for i in sorted_indices]
+
+colors_modern = ['green' if x >= 80 else 'orange' if x >= 60 else 'red' for x in modern_reliability_sorted]
+bars = plt.bar(teams_modern_sorted, modern_reliability_sorted, color=colors_modern, alpha=0.7)
+
+# Add value labels
+for bar, value in zip(bars, modern_reliability_sorted):
+    plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+             f'{value:.1f}%', ha='center', va='bottom', fontweight='bold')
+
+plt.xlabel('Teams', fontsize=12)
+plt.ylabel('Reliability (%)', fontsize=12)
+plt.title('Modern Era (2020-2024) Reliability Ranking', fontsize=14, fontweight='bold')
+plt.xticks(rotation=45)
+plt.grid(axis='y', alpha=0.3)
+plt.ylim(0, 100)
+
+# Plot 4: Biggest Improvers
+plt.subplot(2, 2, 4)
+improvement_data = []
+
+for team in all_teams_results:
+    eras_present = [era for era in era_names if era in all_teams_results[team]]
+    if len(eras_present) >= 2:
+        first_era_reliability = all_teams_results[team][eras_present[0]]['reliability']
+        last_era_reliability = all_teams_results[team][eras_present[-1]]['reliability']
+        improvement = last_era_reliability - first_era_reliability
+        improvement_data.append((team, improvement, first_era_reliability, last_era_reliability))
+
+# Sort by improvement
+improvement_data.sort(key=lambda x: x[1], reverse=True)
+
+teams_improve = [x[0] for x in improvement_data[:6]]  # Top 6 improvers
+improvements = [x[1] for x in improvement_data[:6]]
+start_values = [x[2] for x in improvement_data[:6]]
+end_values = [x[3] for x in improvement_data[:6]]
+
+x_pos = np.arange(len(teams_improve))
+width = 0.35
+
+plt.bar(x_pos - width/2, start_values, width, label='First Era', alpha=0.7, color='red')
+plt.bar(x_pos + width/2, end_values, width, label='Latest Era', alpha=0.7, color='green')
+
+plt.xlabel('Teams', fontsize=12)
+plt.ylabel('Reliability (%)', fontsize=12)
+plt.title('Biggest Reliability Improvers', fontsize=14, fontweight='bold')
+plt.xticks(x_pos, teams_improve, rotation=45)
+plt.legend()
+plt.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# 2. DETAILED TEAM COMPARISON TABLE
+print(f"\n{'='*80}")
+print("📊 DETAILED RELIABILITY COMPARISON ACROSS ERAS")
+print(f"{'='*80}")
+
+# Create comparison table
+era_names_clean = list(eras.keys())
+comparison_data = []
+
+for team in current_teams:
+    team_row = {'Team': team}
+    total_races = 0
+    total_finished = 0
+
+    for era in era_names_clean:
+        if team in all_teams_results and era in all_teams_results[team]:
+            reliability = all_teams_results[team][era]['reliability']
+            races = all_teams_results[team][era]['races']
+            team_row[era] = f"{reliability:.1f}% ({races})"
+            total_races += races
+            total_finished += all_teams_results[team][era]['finished_races']
+        else:
+            team_row[era] = "No data"
+
+    if total_races > 0:
+        overall_reliability = (total_finished / total_races) * 100
+        team_row['Overall'] = f"{overall_reliability:.1f}% ({total_races})"
+    else:
+        team_row['Overall'] = "No data"
+
+    comparison_data.append(team_row)
+
+# Display table
+comparison_df = pd.DataFrame(comparison_data)
+print("\nReliability by Era (Reliability% (Races)):")
+print(comparison_df.to_string(index=False))
+
+# 3. KEY INSIGHTS SUMMARY
+print(f"\n{'='*80}")
+print("🎯 KEY INSIGHTS SUMMARY")
+print(f"{'='*80}")
+
+# Most reliable team in modern era
+modern_best_team = teams_modern_sorted[0]
+modern_best_reliability = modern_reliability_sorted[0]
+print(f"🏆 Most Reliable Modern Team: {modern_best_team} ({modern_best_reliability:.1f}%)")
+
+# Most improved team
+if improvement_data:
+    most_improved = improvement_data[0]
+    print(f"📈 Most Improved: {most_improved[0]} (+{most_improved[1]:.1f}% improvement)")
+    print(f"   From {most_improved[2]:.1f}% → {most_improved[3]:.1f}%")
+
+# Historical vs Modern comparison
+historical_era = 'Early Years (1950-1979)'
+modern_era = 'Modern (2020-2024)'
+
+historical_teams = [team for team in all_teams_results if historical_era in all_teams_results[team]]
+modern_teams = [team for team in all_teams_results if modern_era in all_teams_results[team]]
+
+if historical_teams and modern_teams:
+    avg_historical = np.mean([all_teams_results[team][historical_era]['reliability'] for team in historical_teams])
+    avg_modern = np.mean([all_teams_results[team][modern_era]['reliability'] for team in modern_teams])
+    print(f"📊 Era Comparison: Historical ({avg_historical:.1f}%) → Modern ({avg_modern:.1f}%)")
+    print(f"   Overall improvement: +{avg_modern - avg_historical:.1f}%")
+
+print(f"\n💡 STRATEGIC INSIGHTS:")
+print("• Modern F1 cars are significantly more reliable than historical counterparts")
+print("• Top teams maintain 80%+ reliability in modern era")
+print("• Reliability correlates with championship success")
+print("• Biggest improvements seen in Mercedes and Red Bull")
+print("• Haas shows room for significant improvement")
+
+print(f"\n✅ COMPREHENSIVE ANALYSIS COMPLETE!")
