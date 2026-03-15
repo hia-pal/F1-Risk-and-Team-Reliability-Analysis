@@ -1,0 +1,459 @@
+import re, pandas as pd, numpy as np
+from google.colab import files
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score
+
+def normalize_colname(s):
+    s = str(s).strip().lower()
+    s = re.sub(r"[^\w]+", "_", s)
+    s = re.sub(r"_+","_", s)
+    return s.strip("_")
+
+# Upload (if not already uploaded)
+print("Please upload your Excel file (F1 Revised.xlsx).")
+uploaded = files.upload()
+file_path = list(uploaded.keys())[0]
+print("Using:", file_path)
+# Read sheets
+xls = pd.ExcelFile(file_path)
+print("Available sheets:", xls.sheet_names)
+
+# Find F1 sheet (prefer exact, else first)
+f1_sheet = next((s for s in xls.sheet_names if "f1 data for drivers" in s.lower()), xls.sheet_names[0])
+# Find F2 sheet by searching for 'f2' in sheet names
+f2_sheet = next((s for s in xls.sheet_names if "f2" in s.lower()), None)
+rookie_sheet = next((s for s in xls.sheet_names if "2025" in s.lower() and "rookie" in s.lower()), None)
+
+print("Using F1 sheet:", f1_sheet)
+print("Using F2 sheet:", f2_sheet)
+print("Using rookie sheet (if any):", rookie_sheet)
+
+# Load sheets
+df_f1 = pd.read_excel(file_path, sheet_name=f1_sheet)
+df_f1.columns = [normalize_colname(c) for c in df_f1.columns]
+
+if f2_sheet:
+    df_f2 = pd.read_excel(file_path, sheet_name=f2_sheet)
+    df_f2.columns = [normalize_colname(c) for c in df_f2.columns]
+else:
+    df_f2 = None
+
+# Quick peek
+print("\nF1 cols:", df_f1.columns.tolist()[:30])
+if df_f2 is not None:
+    print("F2 cols:", df_f2.columns.tolist()[:30])
+    # --- Merge F1 + F2 on driver name (robust) ---
+# pick driver name columns
+f1_driver_col = next((c for c in df_f1.columns if "driver" in c), None)
+f2_driver_col = next((c for c in df_f2.columns if "driver" in c), None) if df_f2 is not None else None
+
+if f1_driver_col is None:
+    raise KeyError("No driver name column found in F1 sheet.")
+if df_f2 is None or f2_driver_col is None:
+    print("F2 sheet not found or has no driver column — proceeding with F1-only features.")
+    df_merged = df_f1.copy()
+else:
+    # normalize names to lower for matching
+    df_f1['_drv'] = df_f1[f1_driver_col].astype(str).str.strip().str.lower()
+    df_f2['_drv2'] = df_f2[f2_driver_col].astype(str).str.strip().str.lower()
+    df_merged = pd.merge(df_f1, df_f2, left_on='_drv', right_on='_drv2', how='left', suffixes=('_f1','_f2'))
+    print("Merged shape:", df_merged.shape)
+    # --- Build target: scored_points (from F1 points column) ---
+# try possible points column names
+points_col = next((c for c in df_merged.columns if c in ("points","points_f1","points_f1.0")), None)
+if points_col is None:
+    # try any column containing 'point'
+    points_col = next((c for c in df_merged.columns if "point" in c), None)
+if points_col is None:
+    raise KeyError("Could not find a points column in merged data.")
+df_merged["points_f1"] = pd.to_numeric(df_merged[points_col], errors="coerce").fillna(0)
+df_merged["scored_points"] = (df_merged["points_f1"] > 0).astype(int)
+print("\nTarget distribution (scored_points):\n", df_merged["scored_points"].value_counts())
+# --- Select features: F1 debut features + common F2 features if present ---
+f1_features = ["debut_age","debut_year","track_type","weather_condition"]
+f2_features = ["wins","podiums_f2","total_no_of_races_they_have_raced","total_championships_titles_won_in_junior_series",
+               "total_crashes_or_collisions","total_dnf_per_driver"]
+
+# normalize choices to available columns
+available = df_merged.columns.tolist()
+features = [f for f in f1_features if f in available]
+# try common F2 columns heuristically
+for cand in ["wins","wins_f2","wins_f2.0","wins_f2_","podiums","podiums_f2","podiums_f2.0"]:
+    if cand in available and cand not in features:
+        features.append(cand)
+# numeric crash/dnf totals if present
+for cand in ["total_crashes_or_collisions","total_dnf_per_driver","total_dnf"]:
+    if cand in available and cand not in features:
+        features.append(cand)
+
+print("\nFeatures used:", features)
+# --- Prepare data ---
+df_model = df_merged.dropna(subset=["scored_points"]).copy()
+X = df_model[features].copy()
+y = df_model["scored_points"].copy()
+
+# numeric fill
+num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+for c in num_cols:
+    X[c] = X[c].fillna(X[c].median())
+
+# categorical encode
+cat_cols = [c for c in X.columns if c not in num_cols]
+label_encoders = {}
+for c in cat_cols:
+    X[c] = X[c].fillna("missing").astype(str)
+    le = LabelEncoder()
+    X[c] = le.fit_transform(X[c])
+    label_encoders[c] = le
+
+# scale numeric
+scaler = StandardScaler()
+if num_cols:
+    X[num_cols] = scaler.fit_transform(X[num_cols])
+
+print("Data preparation completed.")
+print("X shape:", X.shape)
+print("y shape:", y.shape)
+# --- Train/test split & Logistic Regression ---
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+model = LogisticRegression(
+    max_iter=1000,
+    class_weight='balanced',
+    C=0.1,  # Stronger regularization
+    random_state=42
+)
+model.fit(X_train, y_train)
+
+# Evaluate
+y_pred = model.predict(X_test)
+y_proba = model.predict_proba(X_test)[:,1]
+print("\nAccuracy:", round(accuracy_score(y_test, y_pred),4))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("Classification Report:\n", classification_report(y_test, y_pred))
+try:
+    print("ROC AUC:", round(roc_auc_score(y_test, y_proba),4))
+except:
+    pass
+
+# Feature importance (odds ratios)
+coef = pd.Series(model.coef_[0], index=X.columns)
+odds = np.exp(coef).sort_values(ascending=False)
+print("\nTop predictors by odds ratio:\n", odds.head(15))
+
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay, roc_curve, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_auc_score
+
+# Calculate all necessary metrics first
+precision_val = precision_score(y_test, y_pred)
+recall_val = recall_score(y_test, y_pred)
+f1_val = f1_score(y_test, y_pred)
+auc_score = roc_auc_score(y_test, y_proba)
+
+# 1. Target Distribution + Feature Importance
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+target_counts = df_model["scored_points"].value_counts()
+ax1.pie(target_counts.values, labels=['No Points', 'Scored Points'],
+        autopct='%1.1f%%', colors=['#FF6B6B', '#4ECDC4'])
+ax1.set_title('Target Distribution')
+
+top_5_odds = odds.head(5)
+ax2.barh(range(len(top_5_odds)), top_5_odds.values, color='skyblue')
+ax2.set_yticks(range(len(top_5_odds)))
+ax2.set_yticklabels(top_5_odds.index)
+ax2.set_xlabel('Odds Ratio')
+ax2.set_title('Top 5 Predictive Features')
+ax2.invert_yaxis()
+plt.tight_layout()
+plt.show()
+
+# 2. Model Performance
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap='Blues', ax=ax1)
+ax1.set_title('Confusion Matrix')
+
+fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+ax2.plot(fpr, tpr, linewidth=2, label=f'AUC = {auc_score:.3f}')
+ax2.plot([0, 1], [0, 1], 'k--', alpha=0.5)
+ax2.set_xlabel('False Positive Rate')
+ax2.set_ylabel('True Positive Rate')
+ax2.set_title('ROC Curve')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# 3. Key Metrics Summary
+fig, ax = plt.subplots(figsize=(8, 4))
+metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'AUC']
+values = [accuracy_score(y_test, y_pred), precision_val, recall_val, f1_val, auc_score]
+bars = ax.bar(metrics, values, color=['skyblue', 'lightgreen', 'lightcoral', 'gold', 'plum'])
+ax.set_ylim(0, 1)
+ax.set_ylabel('Score')
+ax.set_title('Model Performance Summary')
+for bar, value in zip(bars, values):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+            f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+# --- Predict for 2025 rookies if sheet exists ---
+if rookie_sheet:
+    rookies = pd.read_excel(file_path, sheet_name=rookie_sheet)
+    rookies.columns = [normalize_colname(c) for c in rookies.columns]
+
+    # align features
+    for f in features:
+        if f not in rookies.columns:
+            rookies[f] = 0
+
+    for c in cat_cols:
+        rookies[c] = rookies[c].fillna("missing").astype(str)
+        if c in label_encoders:
+            mapped = []
+            le = label_encoders[c]
+            for val in rookies[c]:
+                try:
+                    mapped.append(le.transform([val])[0])
+                except:
+                    mapped.append(len(le.classes_))
+            rookies[c] = mapped
+        else:
+            rookies[c] = rookies[c].map(lambda x: hash(x) % (10**6))
+
+    if num_cols:
+        rookies[num_cols] = scaler.transform(rookies[num_cols].fillna(0))
+
+    rookies_proba = model.predict_proba(rookies[features])[:,1]
+    rookies["pred_prob_scored_points"] = rookies_proba
+
+    display_cols = [c for c in rookies.columns if "driver" in c or "name" in c][:1] + ["pred_prob_scored_points"]
+    print("\n--- 2025 rookies predicted probability of scoring points ---")
+
+    # Just show the results as-is
+    result_df = rookies[display_cols].copy()
+    print(result_df.reset_index(drop=True))
+
+print("\nDone.")
+
+
+
+
+
+
+
+
+
+import re, pandas as pd, numpy as np
+import statsmodels.api as sm
+from google.colab import files
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score
+
+def normalize_colname(s):
+    s = str(s).strip().lower()
+    s = re.sub(r"[^\w]+", "_", s)
+    s = re.sub(r"_+","_", s)
+    return s.strip("_")
+
+# Upload (if not already uploaded)
+print("Please upload your Excel file (F1 Revised.xlsx).")
+uploaded = files.upload()
+file_path = list(uploaded.keys())[0]
+print("Using:", file_path)
+# Read sheets
+xls = pd.ExcelFile(file_path)
+print("Available sheets:", xls.sheet_names)
+
+# Find F1 sheet (prefer exact, else first)
+f1_sheet = next((s for s in xls.sheet_names if "f1 data for drivers" in s.lower()), xls.sheet_names[0])
+# Find F2 sheet by searching for 'f2' in sheet names
+f2_sheet = next((s for s in xls.sheet_names if "f2" in s.lower()), None)
+rookie_sheet = next((s for s in xls.sheet_names if "2025" in s.lower() and "rookie" in s.lower()), None)
+
+print("Using F1 sheet:", f1_sheet)
+print("Using F2 sheet:", f2_sheet)
+print("Using rookie sheet (if any):", rookie_sheet)
+
+# Load sheets
+df_f1 = pd.read_excel(file_path, sheet_name=f1_sheet)
+df_f1.columns = [normalize_colname(c) for c in df_f1.columns]
+
+if f2_sheet:
+    df_f2 = pd.read_excel(file_path, sheet_name=f2_sheet)
+    df_f2.columns = [normalize_colname(c) for c in df_f2.columns]
+else:
+    df_f2 = None
+
+# Quick peek
+print("\nF1 cols:", df_f1.columns.tolist()[:30])
+if df_f2 is not None:
+    print("F2 cols:", df_f2.columns.tolist()[:30])
+    # --- Merge F1 + F2 on driver name (robust) ---
+# pick driver name columns
+f1_driver_col = next((c for c in df_f1.columns if "driver" in c), None)
+f2_driver_col = next((c for c in df_f2.columns if "driver" in c), None) if df_f2 is not None else None
+
+if f1_driver_col is None:
+    raise KeyError("No driver name column found in F1 sheet.")
+if df_f2 is None or f2_driver_col is None:
+    print("F2 sheet not found or has no driver column — proceeding with F1-only features.")
+    df_merged = df_f1.copy()
+else:
+    # normalize names to lower for matching
+    df_f1['_drv'] = df_f1[f1_driver_col].astype(str).str.strip().str.lower()
+    df_f2['_drv2'] = df_f2[f2_driver_col].astype(str).str.strip().str.lower()
+    df_merged = pd.merge(df_f1, df_f2, left_on='_drv', right_on='_drv2', how='left', suffixes=('_f1','_f2'))
+    print("Merged shape:", df_merged.shape)
+    # --- Build target: scored_points (from F1 points column) ---
+# try possible points column names
+points_col = next((c for c in df_merged.columns if c in ("points","points_f1","points_f1.0")), None)
+if points_col is None:
+    # try any column containing 'point'
+    points_col = next((c for c in df_merged.columns if "point" in c), None)
+if points_col is None:
+    raise KeyError("Could not find a points column in merged data.")
+df_merged["points_f1"] = pd.to_numeric(df_merged[points_col], errors="coerce").fillna(0)
+df_merged["scored_points"] = (df_merged["points_f1"] > 0).astype(int)
+print("\nTarget distribution (scored_points):\n", df_merged["scored_points"].value_counts())
+# --- Select features: F1 debut features + common F2 features if present ---
+f1_features = ["debut_age","debut_year","track_type","weather_condition"]
+f2_features = ["wins","podiums_f2","total_no_of_races_they_have_raced","total_championships_titles_won_in_junior_series",
+               "total_crashes_or_collisions","total_dnf_per_driver"]
+
+# normalize choices to available columns
+available = df_merged.columns.tolist()
+features = [f for f in f1_features if f in available]
+# try common F2 columns heuristically
+for cand in ["wins","wins_f2","wins_f2.0","wins_f2_","podiums","podiums_f2","podiums_f2.0"]:
+    if cand in available and cand not in features:
+        features.append(cand)
+# numeric crash/dnf totals if present
+for cand in ["total_crashes_or_collisions","total_dnf_per_driver","total_dnf"]:
+    if cand in available and cand not in features:
+        features.append(cand)
+
+print("\nFeatures used:", features)
+# --- Prepare data ---
+df_model = df_merged.dropna(subset=["scored_points"]).copy()
+X = df_model[features].copy()
+y = df_model["scored_points"].copy()
+
+# numeric fill
+num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+for c in num_cols:
+    X[c] = X[c].fillna(X[c].median())
+
+# categorical encode
+cat_cols = [c for c in X.columns if c not in num_cols]
+label_encoders = {}
+for c in cat_cols:
+    X[c] = X[c].fillna("missing").astype(str)
+    le = LabelEncoder()
+    X[c] = le.fit_transform(X[c])
+    label_encoders[c] = le
+
+print("Data preparation completed.")
+print("X shape:", X.shape)
+print("y shape:", y.shape)
+
+# --- METHOD 1: Using statsmodels (recommended for p-values) ---
+print("\n" + "="*50)
+print("STATSMODELS LOGISTIC REGRESSION (WITH P-VALUES)")
+print("="*50)
+
+# Add constant for intercept (statsmodels requires this)
+X_sm = sm.add_constant(X)
+
+# Fit logistic regression with statsmodels
+model_sm = sm.Logit(y, X_sm)
+result = model_sm.fit()
+
+# Print comprehensive results with p-values
+print(result.summary())
+
+# Extract p-values into a clean dataframe
+pvalues_df = pd.DataFrame({
+    'Feature': ['Intercept'] + features,
+    'Coefficient': result.params,
+    'Std_Error': result.bse,
+    'z_value': result.tvalues,  # in statsmodels, tvalues are actually z-values for logistic
+    'p_value': result.pvalues,
+    'Odds_Ratio': np.exp(result.params)
+})
+
+print("\nFeature Significance Summary:")
+print(pvalues_df.round(4))
+
+# Significance highlights
+significant_features = pvalues_df[pvalues_df['p_value'] < 0.05]
+print(f"\nSignificant features (p < 0.05): {len(significant_features)}")
+print(significant_features[['Feature', 'p_value', 'Odds_Ratio']].round(4))
+
+# --- METHOD 2: Compare with scikit-learn for consistency ---
+print("\n" + "="*50)
+print("SCIKIT-LEARN LOGISTIC REGRESSION (FOR COMPARISON)")
+print("="*50)
+
+# Scale numeric features for scikit-learn
+scaler = StandardScaler()
+X_scaled = X.copy()
+if num_cols:
+    X_scaled[num_cols] = scaler.fit_transform(X_scaled[num_cols])
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.25, random_state=42, stratify=y)
+
+model_sk = LogisticRegression(
+    max_iter=1000,
+    class_weight='balanced',
+    C=0.1,
+    random_state=42
+)
+model_sk.fit(X_train, y_train)
+
+# Evaluate
+y_pred = model_sk.predict(X_test)
+y_proba = model_sk.predict_proba(X_test)[:,1]
+print("\nAccuracy:", round(accuracy_score(y_test, y_pred),4))
+print("ROC AUC:", round(roc_auc_score(y_test, y_proba),4))
+
+# Feature importance comparison
+coef_sk = pd.Series(model_sk.coef_[0], index=features)
+odds_sk = np.exp(coef_sk).sort_values(ascending=False)
+print("\nTop predictors by odds ratio (scikit-learn):")
+print(odds_sk.head(15))
+
+# --- Final summary ---
+print("\n" + "="*50)
+print("FINAL INTERPRETATION")
+print("="*50)
+print("Key findings from p-value analysis:")
+for _, row in pvalues_df.iterrows():
+    if row['p_value'] < 0.05:
+        significance = "SIGNIFICANT"
+    elif row['p_value'] < 0.1:
+        significance = "MARGINALLY SIGNIFICANT"
+    else:
+        significance = "not significant"
+
+    if row['Feature'] != 'Intercept':
+        direction = "increases" if row['Odds_Ratio'] > 1 else "decreases"
+        print(f"- {row['Feature']}: p = {row['p_value']:.4f} ({significance})")
+        print(f"  Odds Ratio: {row['Odds_Ratio']:.4f} ({direction} odds of scoring points)")
